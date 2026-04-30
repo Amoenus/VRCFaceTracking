@@ -22,7 +22,12 @@ public class LocalSettingsService : ILocalSettingsService
     private IDictionary<string, object> _settings;
 
     private bool _isInitialized;
-
+    
+    // Save debouncing
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
+    private CancellationTokenSource? _cts = new();
+    private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(300);
+    
     public LocalSettingsService(IFileService fileService, IOptions<LocalSettingsOptions> options)
     {
         _fileService = fileService;
@@ -78,7 +83,8 @@ public class LocalSettingsService : ILocalSettingsService
 
             _settings[key] = await Json.StringifyAsync(value);
 
-            await _fileService.Save(_applicationDataFolder, _localSettingsFile, _settings);
+            await FlushSaveSettings();
+            //await _fileService.Save(_applicationDataFolder, _localSettingsFile, _settings);
         }
     }
 
@@ -133,6 +139,35 @@ public class LocalSettingsService : ILocalSettingsService
             var settingName = savedSettingAttribute.GetName();
 
             await SaveSettingAsync(settingName, property.GetValue(instance), savedSettingAttribute.ForceLocal());
+        }
+    }
+
+    private async Task FlushSaveSettings()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        
+        var cts = new CancellationTokenSource();
+        _cts = cts;
+
+        try
+        {
+            await Task.Delay(Debounce, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Newer save req came in. Skip this one and let the new one do the write.
+            return;
+        }
+        
+        await _semaphore.WaitAsync();
+        try
+        {
+            await _fileService.Save(_applicationDataFolder, _localSettingsFile, _settings);
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 }
