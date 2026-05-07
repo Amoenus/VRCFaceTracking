@@ -23,6 +23,10 @@ public class Correctors : TrackingMutation
     [MutationProperty("EyeLid Blend", true)]
     public float eyeLidBlend = 0.0f;    // 0.00f meaning zero influence, 1.00f meaning the value of each eyelid is the median of both
     
+    // For ppl with hardware that provides unpredictable eyeL/R movement
+    [MutationProperty("EyeLook Symmetrize", true)]
+    public bool eyeLookSymmetrize = false;
+    
 
     private float BlendParam(float currentValue, float influencerValue) => Math.Clamp(currentValue * (1.0f - eyeLidBlend * 0.5f) + influencerValue * (eyeLidBlend * 0.5f), 0.0f, 1.0f);
 
@@ -65,6 +69,22 @@ public class Correctors : TrackingMutation
             BlendUnifiedExpressionParams(ref data, UnifiedExpressions.BrowLowererLeft, UnifiedExpressions.BrowLowererRight);
             BlendUnifiedExpressionParams(ref data, UnifiedExpressions.BrowInnerUpLeft, UnifiedExpressions.BrowInnerUpRight);
             BlendUnifiedExpressionParams(ref data, UnifiedExpressions.BrowOuterUpLeft, UnifiedExpressions.BrowOuterUpRight);
+        }
+
+        if (eyeLookSymmetrize)
+        {
+            // Easy for Y since human eyes can't rlly diverge that way. We'll just grab the median
+            var combinedY = (data.Eye.Right.Gaze.y + data.Eye.Left.Gaze.y) / 2;
+            data.Eye.Right.Gaze.y = combinedY;
+            data.Eye.Right.Gaze.y = combinedY;
+            
+            // Harder for X since we need to account for convergence
+            // We'll flip one of them, find the median and diff, and then use that
+            // Might need to redo this in the future. Who knows. Works for now :)
+            var combinedX = (data.Eye.Right.Gaze.x + -data.Eye.Left.Gaze.x) / 2;
+            var diff = (data.Eye.Right.Gaze.x - -data.Eye.Left.Gaze.x) / 2;
+            data.Eye.Right.Gaze.x = combinedX + diff;
+            data.Eye.Left.Gaze.x = -(combinedX - diff);
         }
     }
 }
